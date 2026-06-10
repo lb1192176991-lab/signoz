@@ -7185,6 +7185,39 @@ components:
       - operation
       - priority
       type: object
+    SpantypesSpanMappingPreviewRequest:
+      properties:
+        attributes:
+          $ref: '#/components/schemas/SpantypesSpanMappingPreviewSpan'
+        groupId:
+          nullable: true
+          type: string
+        otlpTraces:
+          additionalProperties: {}
+          nullable: true
+          type: object
+      type: object
+    SpantypesSpanMappingPreviewResponse:
+      properties:
+        attributes:
+          $ref: '#/components/schemas/SpantypesSpanMappingPreviewSpan'
+        otlpTraces:
+          additionalProperties: {}
+          nullable: true
+          type: object
+      type: object
+    SpantypesSpanMappingPreviewSpan:
+      nullable: true
+      properties:
+        resourceAttributes:
+          additionalProperties: {}
+          nullable: true
+          type: object
+        spanAttributes:
+          additionalProperties: {}
+          nullable: true
+          type: object
+      type: object
     SpantypesUpdatableSpanMapper:
       properties:
         config:
@@ -12788,6 +12821,70 @@ paths:
       - tokenizer:
         - ADMIN
       summary: Update a span mapper
+      tags:
+      - spanmapper
+  /api/v1/span_mapper_groups/preview:
+    post:
+      deprecated: false
+      description: Previews how the org's saved attribute mappings would transform
+        a sample span.
+      operationId: PreviewSpanMapping
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpantypesSpanMappingPreviewRequest'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SpantypesSpanMappingPreviewResponse'
+                  status:
+                    type: string
+                required:
+                - status
+                - data
+                type: object
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Not Found
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Internal Server Error
+      security:
+      - api_key:
+        - VIEWER
+      - tokenizer:
+        - VIEWER
+      summary: Preview span attribute mapping against a sample span
       tags:
       - spanmapper
   /api/v1/testChannel:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/modules/spanmapper"
 	"github.com/SigNoz/signoz/pkg/query-service/agentConf"
 	"github.com/SigNoz/signoz/pkg/types/opamptypes"
@@ -100,6 +101,64 @@ func (module *module) DeleteMapper(ctx context.Context, orgID, groupID, id value
 	}
 	agentConf.NotifyConfigUpdate(ctx)
 	return nil
+}
+
+// PreviewMapping resolves the org's saved mappings for a sample input
+// and returns the transformed result.
+func (module *module) PreviewMapping(ctx context.Context, orgID valuer.UUID, req *spantypes.SpanMappingPreviewRequest) (*spantypes.SpanMappingPreviewResponse, error) {
+	groups, err := module.resolvePreviewGroups(ctx, orgID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	hasAttrs := req.Attributes != nil
+	hasOTLP := len(req.OtlpTraces) > 0
+	if hasAttrs == hasOTLP {
+		return nil, errors.New(errors.TypeInvalidInput, spantypes.ErrCodeMappingInvalidInput, "exactly one of 'attributes' or 'otlpTraces' must be provided")
+	}
+
+	if hasAttrs {
+		outResource, outSpan := spantypes.SimulateSpanMapping(groups, req.Attributes.ResourceAttributes, req.Attributes.SpanAttributes)
+		return &spantypes.SpanMappingPreviewResponse{
+			Attributes: &spantypes.SpanMappingPreviewSpan{ResourceAttributes: outResource, SpanAttributes: outSpan},
+		}, nil
+	}
+
+	in, err := json.Marshal(req.OtlpTraces)
+	if err != nil {
+		return nil, errors.Wrapf(err, errors.TypeInvalidInput, spantypes.ErrCodeMappingInvalidInput, "could not serialize otlpTraces payload")
+	}
+	out, err := spantypes.SimulateSpanMappingOTLP(groups, in)
+	if err != nil {
+		return nil, err
+	}
+	var transformed map[string]any
+	if err := json.Unmarshal(out, &transformed); err != nil {
+		return nil, errors.WrapInternalf(err, spantypes.ErrCodeMappingPreviewFailed, "could not deserialize transformed traces")
+	}
+	return &spantypes.SpanMappingPreviewResponse{OtlpTraces: transformed}, nil
+}
+
+// resolvePreviewGroups resolves the config to preview against a specific saved
+// group when GroupID is set, otherwise all the org's enabled saved mappings.
+func (module *module) resolvePreviewGroups(ctx context.Context, orgID valuer.UUID, req *spantypes.SpanMappingPreviewRequest) ([]*spantypes.SpanMapperGroupWithMappers, error) {
+	if req.GroupID != nil && *req.GroupID != "" {
+		id, err := valuer.NewUUID(*req.GroupID)
+		if err != nil {
+			return nil, errors.Wrapf(err, errors.TypeInvalidInput, spantypes.ErrCodeMappingInvalidInput, "group id is not a valid uuid")
+		}
+		group, err := module.store.GetGroup(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		mappers, err := module.store.ListMappers(ctx, orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		return []*spantypes.SpanMapperGroupWithMappers{{Group: group, Mappers: mappers}}, nil
+	}
+
+	return module.listEnabledGroupsWithMappers(ctx, orgID)
 }
 
 func (module *module) AgentFeatureType() agentConf.AgentFeatureType {

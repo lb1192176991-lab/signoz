@@ -8440,6 +8440,83 @@ export interface SpantypesSpanMapperDTO {
 	updatedBy?: string;
 }
 
+export type SpantypesSpanMappingPreviewRequestDTOOtlpTracesAnyOf = {
+	[key: string]: unknown;
+};
+
+/**
+ * @nullable
+ */
+export type SpantypesSpanMappingPreviewRequestDTOOtlpTraces =
+	SpantypesSpanMappingPreviewRequestDTOOtlpTracesAnyOf | null;
+
+export type SpantypesSpanMappingPreviewSpanDTOAnyOfResourceAttributesAnyOf = {
+	[key: string]: unknown;
+};
+
+/**
+ * @nullable
+ */
+export type SpantypesSpanMappingPreviewSpanDTOAnyOfResourceAttributes =
+	SpantypesSpanMappingPreviewSpanDTOAnyOfResourceAttributesAnyOf | null;
+
+export type SpantypesSpanMappingPreviewSpanDTOAnyOfSpanAttributesAnyOf = {
+	[key: string]: unknown;
+};
+
+/**
+ * @nullable
+ */
+export type SpantypesSpanMappingPreviewSpanDTOAnyOfSpanAttributes =
+	SpantypesSpanMappingPreviewSpanDTOAnyOfSpanAttributesAnyOf | null;
+
+export type SpantypesSpanMappingPreviewSpanDTOAnyOf = {
+	/**
+	 * @type object,null
+	 */
+	resourceAttributes?: SpantypesSpanMappingPreviewSpanDTOAnyOfResourceAttributes;
+	/**
+	 * @type object,null
+	 */
+	spanAttributes?: SpantypesSpanMappingPreviewSpanDTOAnyOfSpanAttributes;
+};
+
+/**
+ * @nullable
+ */
+export type SpantypesSpanMappingPreviewSpanDTO =
+	SpantypesSpanMappingPreviewSpanDTOAnyOf | null;
+
+export interface SpantypesSpanMappingPreviewRequestDTO {
+	attributes?: SpantypesSpanMappingPreviewSpanDTO | null;
+	/**
+	 * @type string,null
+	 */
+	groupId?: string | null;
+	/**
+	 * @type object,null
+	 */
+	otlpTraces?: SpantypesSpanMappingPreviewRequestDTOOtlpTraces;
+}
+
+export type SpantypesSpanMappingPreviewResponseDTOOtlpTracesAnyOf = {
+	[key: string]: unknown;
+};
+
+/**
+ * @nullable
+ */
+export type SpantypesSpanMappingPreviewResponseDTOOtlpTraces =
+	SpantypesSpanMappingPreviewResponseDTOOtlpTracesAnyOf | null;
+
+export interface SpantypesSpanMappingPreviewResponseDTO {
+	attributes?: SpantypesSpanMappingPreviewSpanDTO | null;
+	/**
+	 * @type object,null
+	 */
+	otlpTraces?: SpantypesSpanMappingPreviewResponseDTOOtlpTraces;
+}
+
 export interface SpantypesUpdatableSpanMapperDTO {
 	config?: SpantypesSpanMapperConfigDTO;
 	/**
@@ -9746,6 +9823,14 @@ export type UpdateSpanMapperPathParameters = {
 	groupId: string;
 	mapperId: string;
 };
+export type PreviewSpanMapping200 = {
+	data: SpantypesSpanMappingPreviewResponseDTO;
+	/**
+	 * @type string
+	 */
+	status: string;
+};
+
 export type GetTraceAggregationsPathParameters = {
 	traceID: string;
 };
