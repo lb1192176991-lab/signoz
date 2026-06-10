@@ -451,6 +451,23 @@ func (provider *provider) addQuerierRoutes(router *mux.Router) error {
 		return err
 	}
 
+	if err := router.Handle("/api/v5/query_range/dry_run", handler.New(provider.authzMiddleware.ViewAccess(provider.querierHandler.QueryRangePreview), handler.OpenAPIDef{
+		ID:                  "QueryRangeDryRunV5",
+		Tags:                []string{"querier"},
+		Summary:             "Query range dry run",
+		Description:         "Validate a composite query without executing it. Accepts the same payload as the query range endpoint. By default returns a lightweight per-query verdict (valid/error/warnings) plus a top-level score (0-100 granule-skip selectivity; higher is better). Pass ?verbose=true to also include the rendered underlying ClickHouse statement(s) for each query (each carrying its own granuleSkipScore). Pass ?explain=plan|estimate to attach the corresponding ClickHouse EXPLAIN output to each statement (implies verbose). Pass ?score=false to skip the score for the cheapest validation-only preview. Intended for agentic/dry-run consumption: per-query errors are reported in the response rather than failing the whole request.",
+		Request:             new(qbtypes.QueryRangeRequest),
+		RequestQuery:        new(qbtypes.QueryRangePreviewParams),
+		RequestContentType:  "application/json",
+		Response:            new(qbtypes.QueryRangePreviewResponse),
+		ResponseContentType: "application/json",
+		SuccessStatusCode:   http.StatusOK,
+		ErrorStatusCodes:    []int{http.StatusBadRequest},
+		SecuritySchemes:     newSecuritySchemes(types.RoleViewer),
+	})).Methods(http.MethodPost).GetError(); err != nil {
+		return err
+	}
+
 	if err := router.Handle("/api/v5/substitute_vars", handler.New(provider.authzMiddleware.ViewAccess(provider.querierHandler.ReplaceVariables), handler.OpenAPIDef{
 		ID:                  "ReplaceVariables",
 		Tags:                []string{"querier"},

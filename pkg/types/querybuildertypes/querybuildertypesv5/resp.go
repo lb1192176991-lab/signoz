@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
 	"github.com/swaggest/jsonschema-go"
@@ -62,6 +63,137 @@ type QueryRangeResponse struct {
 	Warning *QueryWarnData `json:"warning,omitempty"`
 
 	QBEvent *QBEvent `json:"-"`
+}
+
+// QueryRangePreviewResponse describes the dry-run output of a query range
+// request. Each entry corresponds to a single query in the composite query.
+
+type QueryRangePreviewResponse struct {
+	Queries map[string]QueryPreview `json:"queries"`
+}
+
+// ExplainVariant identifies one of the ClickHouse EXPLAIN modes that the
+// preview endpoint can run against a rendered SQL statement.
+type ExplainVariant string
+
+const (
+	ExplainVariantNone ExplainVariant = ""
+	// ExplainVariantPlan returns the query execution plan tree (what gets read
+	// and how it's aggregated).
+	ExplainVariantPlan ExplainVariant = "plan"
+	// ExplainVariantEstimate returns ClickHouse's per-table estimate of the
+	// parts/rows/marks the query will read — an absolute cost estimate that
+	// complements the (ratio-based) granuleSkipScore.
+	ExplainVariantEstimate ExplainVariant = "estimate"
+)
+
+// QueryRangePreviewOptions carries per-call options for the query range
+// preview (dry-run) endpoint. The zero value produces a lightweight,
+// verdict-only preview (valid/error/warnings per query, no rendered SQL).
+type QueryRangePreviewOptions struct {
+	// Explain selects which ClickHouse EXPLAIN variant to run for each rendered
+	// SQL statement. Leave empty to skip EXPLAIN. Implies Verbose (the EXPLAIN
+	// output attaches to each statement).
+	Explain ExplainVariant
+	// Verbose includes the rendered ClickHouse statement(s) (Statements) in the
+	// response. The default (false) returns only the per-query verdict
+	// (valid/error/warnings) plus the headline GranuleSkipScore — every query is
+	// still fully validated, just not rendered into the response. Requesting
+	// Explain implies Verbose, since EXPLAIN output attaches to each statement.
+	Verbose bool
+	// IncludeGranuleSkipScore computes the GranuleSkipScore. The HTTP endpoint
+	// sets it true by default (the headline top-level score is returned even in
+	// the lightweight, non-verbose response), and only false on ?score=false.
+	// When the response includes statements (Verbose/Explain), each statement
+	// also carries its own GranuleSkipScore and the top-level one is their
+	// minimum. Computing it costs one ClickHouse EXPLAIN per statement.
+	IncludeGranuleSkipScore bool
+}
+
+// QueryRangePreviewParams documents the query-string parameters accepted by the
+// query range preview (dry-run) endpoint.
+type QueryRangePreviewParams struct {
+	// Explain selects which ClickHouse EXPLAIN variant to run against each
+	// rendered SQL statement. Empty or "false" skips EXPLAIN; "true" maps to
+	// "plan". Allowed: plan (execution plan tree), estimate (parts/rows/marks
+	// to read). Implies verbose.
+	Explain string `query:"explain"`
+	// Verbose, when "true", includes the rendered ClickHouse statement(s) in the
+	// response. The default response is lightweight: the per-query verdict
+	// (valid/error/warnings) plus the top-level granuleSkipScore. Requesting
+	// explain implies verbose.
+	Verbose string `query:"verbose"`
+	// Score controls the granuleSkipScore (granule-skip selectivity, 0-100;
+	// higher is better). It defaults to "true" — the top-level score is returned
+	// even in the lightweight response. Set score=false to skip it (and its
+	// ClickHouse EXPLAIN round trips) for the cheapest validation-only preview.
+	Score string `query:"score"`
+}
+
+// PrepareJSONSchema adds description to the QueryRangePreviewResponse schema.
+func (q *QueryRangePreviewResponse) PrepareJSONSchema(schema *jsonschema.Schema) error {
+	schema.WithDescription("Response from the v5 query range preview (dry-run) endpoint. For each query in the composite query, returns the underlying ClickHouse statement(s) it renders to without executing them (one per PromQL metric selector; exactly one for builder/ClickHouse/trace-operator queries), with optional EXPLAIN output and granule-skip score when requested.")
+	return nil
+}
+
+// QueryPreview is the dry-run result for a single query, keyed by query name
+// in QueryRangePreviewResponse.Queries.
+type QueryPreview struct {
+	// Valid is the headline verdict for this query: true when it previewed
+	// without error, false when Error is set. It is always present (derived from
+	// Error at marshal time) so an agent can branch on a single boolean instead
+	// of testing for the presence of the error object.
+	Valid bool `json:"valid"`
+	// Error describes why this query is invalid or could not be previewed; nil
+	// when the query previewed successfully. It is the structured form
+	// (code, message, and — when available — suggestions and invalidReferences)
+	// so an agent can act on it programmatically instead of parsing a string.
+	Error    error    `json:"error,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
+	// Score is the headline selectivity for this query: the percentage (0-100) of
+	// candidate granules eliminated by partition, primary-key, and skip-index
+	// pruning before any data is read (higher = less data read). It is the
+	// minimum of the per-statement Statements[].GranuleSkipScore values — the
+	// least-selective (worst) underlying statement, which dominates cost.
+	// Returned by default; omitted when ?score=false or no statement reads a
+	// MergeTree table.
+	Score *float64 `json:"score,omitempty"`
+	// Statements are the underlying ClickHouse statement(s) this query renders to,
+	// in execution order. Builder, ClickHouse SQL, and trace-operator queries
+	// render exactly one; a PromQL query renders one per metric selector (the
+	// Prometheus engine issues a statement per selector). Empty for a
+	// validation-only preview, a query that failed to render (see Error), or one
+	// that resolves to no data (a fully-missing metric, see Warnings).
+	Statements []PreviewStatement `json:"statements,omitempty"`
+}
+
+// PreviewStatement is one rendered ClickHouse statement the query will execute,
+// with its bound args and — when requested — its EXPLAIN output and
+// GranuleSkipScore.
+type PreviewStatement struct {
+	Query            string   `json:"query"`
+	Args             []any    `json:"args,omitempty"`
+	Explain          string   `json:"explain,omitempty"`
+	GranuleSkipScore *float64 `json:"granuleSkipScore,omitempty"`
+}
+
+// MarshalJSON renders Error as the structured error form (code, message and,
+// when present, suggestions/invalidReferences) instead of the default {} that a
+// bare error interface produces, so an agent consuming the dry-run can act on it
+// programmatically.
+func (p QueryPreview) MarshalJSON() ([]byte, error) {
+	type alias QueryPreview
+	out := struct {
+		alias
+		Error *errors.JSON `json:"error,omitempty"`
+	}{alias: alias(p)}
+	out.alias.Error = nil
+	// Derive the verdict from the error so callers can't desync the two.
+	out.alias.Valid = p.Error == nil
+	if p.Error != nil {
+		out.Error = errors.AsJSON(p.Error)
+	}
+	return json.Marshal(out)
 }
 
 var _ jsonschema.Preparer = &QueryRangeResponse{}

@@ -64,3 +64,17 @@ func (provider *provider) Querier(mint, maxt int64) (storage.Querier, error) {
 
 	return storage.NewMergeQuerier(nil, []storage.Querier{querier}, storage.ChainedSeriesMerge), nil
 }
+
+// CapturingStorage implements prometheus.StatementCapturer: it returns a Storage
+// that records the ClickHouse SQL each selector would run (without executing
+// it) and a recorder to read the captured statements back. A fresh recorder is
+// created per call so concurrent dry-runs don't share state.
+func (provider *provider) CapturingStorage() (storage.Queryable, prometheus.StatementRecorder) {
+	recorder := &statementRecorder{}
+	capture := &captureClient{
+		client:   &client{settings: provider.settings, telemetryStore: provider.telemetryStore},
+		recorder: recorder,
+	}
+	queryable := remote.NewSampleAndChunkQueryableClient(capture, labels.EmptyLabels(), []*labels.Matcher{}, false, stCallback)
+	return captureQueryable{inner: queryable}, recorder
+}
