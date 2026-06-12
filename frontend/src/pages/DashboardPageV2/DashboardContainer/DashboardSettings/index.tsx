@@ -5,7 +5,7 @@ import { TabItemProps, Tabs } from '@signozhq/ui/tabs';
 import type { DashboardtypesGettableDashboardV2DTO } from 'api/generated/services/sigNoz.schemas';
 
 import GeneralSettings from './General';
-import { SettingsTabPlaceholder } from './utils';
+import PublicDashboardSettings from './PublicDashboard';
 import VariablesSettings from './Variables';
 
 interface DashboardSettingsProps {
@@ -30,9 +30,7 @@ function DashboardSettings({ dashboard }: DashboardSettingsProps): JSX.Element {
 			{
 				key: 'public-dashboard',
 				label: 'Publish',
-				children: (
-					<SettingsTabPlaceholder message="V2 public dashboard publishing coming next." />
-				),
+				children: <PublicDashboardSettings dashboard={dashboard} />,
 				prefixIcon: <Globe size={14} />,
 			},
 		],
